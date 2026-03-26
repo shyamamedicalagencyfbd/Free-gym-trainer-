@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required, immutable) - The unique Firebase Auth ID.
+    //   - email: string (required, immutable) - The user's email address.
+    //   - displayName: string (optional) - The user's display name.
+    //   - photoURL: string (optional) - The user's profile picture URL.
+    //   - weight: number (optional) - The user's current weight in kg.
+    //   - createdAt: string (optional, immutable) - When the user account was created.
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      let allowedFields = ['uid', 'email', 'displayName', 'photoURL', 'weight', 'createdAt'];
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.uid is string &&
+             data.email is string &&
+             (!('weight' in data) || data.weight is number) &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100) || data.displayName == null) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 500) || data.photoURL == null) &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && 
+                    isValidUser(request.resource.data) &&
+                    request.resource.data.uid == resource.data.uid &&
+                    request.resource.data.email == resource.data.email &&
+                    (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+    }
+  }
+}
